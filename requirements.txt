@@ -2,7 +2,6 @@ streamlit
 groq
 python-dotenv
 tree-sitter
-tree-sitter-languages
 requests
 numpy
 pandas
