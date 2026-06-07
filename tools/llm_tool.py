@@ -1,64 +1,61 @@
 import json
-import ast
+import re
 from groq import Groq
 from config import GROQ_API_KEY
-from prompts.prompts import build_analysis_prompt
 
 client = Groq(api_key=GROQ_API_KEY)
 
 
 # -------------------------
-# FALLBACK RESPONSE
+# FALLBACK
 # -------------------------
-def fallback(reason="Unknown error"):
+def fallback(msg="error"):
     return {
-        "summary": "AI analysis failed",
-        "bugs_explained": reason,
+        "summary": "Analysis failed",
+        "bugs_explained": msg,
         "severity_analysis": "Unknown",
-        "best_practices": [],
+        "suggestions": ["Unable to analyze properly"],
+        "fix_explanation": "",
         "fixed_code": ""
     }
 
 
 # -------------------------
-# SAFE PARSER (FIXED)
+# SAFE PARSER
 # -------------------------
 def safe_parse(text):
 
-    if isinstance(text, dict):
-        return text
-
-    if text is None:
-        return fallback("Empty response")
-
     try:
-        text = str(text).strip()
+        if not text:
+            return fallback("Empty response")
 
-        # remove markdown
-        text = text.replace("```json", "").replace("```", "")
-
-        start = text.find("{")
-        end = text.rfind("}")
-
-        if start == -1 or end == -1:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
             return fallback("No JSON found")
 
-        json_str = text[start:end + 1]
+        data = json.loads(match.group())
 
-        # STEP 1: try JSON first
-        try:
-            return json.loads(json_str)
-        except:
-            pass
+        fixed_code = data.get("fixed_code", "")
 
-        # STEP 2: fallback for python dict format
-        try:
-            return ast.literal_eval(json_str)
-        except:
-            return fallback("Invalid JSON / dict format")
+        # prevent garbage fixes
+        if not isinstance(fixed_code, str):
+            fixed_code = ""
+
+        if len(fixed_code.strip()) < 3:
+            fixed_code = ""
+
+        return {
+            "summary": data.get("summary", "No summary provided"),
+            "bugs_explained": data.get("bugs_explained", ""),
+            "severity_analysis": data.get("severity_analysis", ""),
+            "suggestions": data.get("suggestions", []),
+            "fix_explanation": data.get("fix_explanation", ""),
+            "findings": data.get("findings", []),
+            "fixed_code": fixed_code
+        }
 
     except Exception as e:
-        return fallback(f"Parse error: {str(e)}")
+        return fallback(str(e))
 
 
 # -------------------------
@@ -66,38 +63,58 @@ def safe_parse(text):
 # -------------------------
 class LLMTool:
 
-    def explain(self, code, language, bugs, complexity, stats):
+    def explain(self, code, language, bugs, complexity, ast):
 
-        prompt = build_analysis_prompt(
-            code,
-            language,
-            bugs,
-            complexity,
-            stats
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """
+You are an expert AI Code Reviewer.
+
+You MUST ALWAYS:
+
+1. summary → explain what the code does clearly
+2. bugs_explained → explain issues OR say "No issues found"
+3. severity_analysis → risk explanation
+4. suggestions → ALWAYS give at least 1 improvement suggestion
+5. fix_explanation → explain whether code is correct or not
+6. fixed_code → ONLY improved code if needed, otherwise ""
+
+RULES:
+- If code is correct, say "Code is correct and safe"
+- NEVER return empty summary
+- NEVER skip explanation
+- ALWAYS provide at least 1 suggestion
+"""
+                },
+                {
+                    "role": "user",
+                    "content": f"""
+Analyze this code:
+
+CODE:
+{code}
+
+LANGUAGE:
+{language}
+
+BUGS:
+{bugs}
+
+COMPLEXITY:
+{complexity}
+
+AST:
+{ast}
+
+Return STRICT JSON ONLY.
+Even if code is correct, explain it properly and give suggestions.
+"""
+                }
+            ],
+            temperature=0.2
         )
 
-        try:
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a strict JSON generator. "
-                            "Return ONLY valid JSON. No text."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.1
-            )
-
-            text = response.choices[0].message.content
-
-            return safe_parse(text)
-
-        except Exception as e:
-            return fallback(f"LLM error: {str(e)}")
+        return safe_parse(response.choices[0].message.content)

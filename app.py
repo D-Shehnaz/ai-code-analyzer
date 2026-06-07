@@ -1,7 +1,10 @@
 import streamlit as st
 from agent import Agent
 
-st.set_page_config(page_title="AI Code Review Dashboard", layout="wide")
+st.set_page_config(
+    page_title="AI Code Review Dashboard",
+    layout="wide"
+)
 
 st.title("🤖 AI Code Review Dashboard")
 
@@ -20,30 +23,81 @@ if st.button("Analyze"):
         st.stop()
 
     agent = Agent()
-    result = agent.run(code)
+    result = agent.run(code) or {}
 
-    static = result.get("static", {})
-    ai = result.get("ai_review", {})
+    # ----------------------------
+    # SAFE EXTRACTION
+    # ----------------------------
+    static = result.get("static") or {}
+    ai = result.get("ai_review") or {}
+
+    critical = result.get("critical_bugs") or []
+    warnings = result.get("warnings") or []
+    severity_score = result.get("severity_score") or 0
+
+    # AI fields (fully safe)
+    summary = ai.get("summary") or "No summary available"
+    bugs_explained = ai.get("bugs_explained") or ""
+    severity_analysis = ai.get("severity_analysis") or ""
+    suggestions = ai.get("suggestions") or []
+    fix_explanation = ai.get("fix_explanation") or ""
+
+    # FIXED CODE (extra safety)
+    fixed_code = (result.get("fixed_code") or ai.get("fixed_code") or "").strip()
 
     # =========================
     # 📊 STATIC ANALYSIS
     # =========================
     st.header("📊 Static Analysis")
 
-    st.subheader("Language")
-    st.write(static.get("language", "Unknown"))
+    col1, col2, col3 = st.columns(3)
 
-    st.subheader("Complexity")
-    st.json(static.get("complexity", {}))
+    with col1:
+        st.subheader("Language")
+        st.success(static.get("language") or "Unknown")
 
-    st.subheader("AST (Basic Analysis)")
-    st.json(static.get("ast", {}))
+    with col2:
+        st.subheader("Severity Score")
+        st.metric("Risk Level", f"{severity_score}/100")
 
-    st.subheader("🔴 Critical Bugs")
-    st.json(static.get("critical_bugs", []))
+    with col3:
+        st.subheader("Complexity Score")
+        st.metric("Score", static.get("complexity", {}).get("score", 0))
 
-    st.subheader("🟡 Warnings")
-    st.json(static.get("warnings", []))
+    st.divider()
+
+    # AST
+    st.subheader("🧠 AST Analysis")
+    st.json(static.get("ast") or {})
+
+    # Complexity
+    st.subheader("⚙️ Complexity Breakdown")
+    st.json(static.get("complexity") or {})
+
+    # =========================
+    # 🚨 BUGS SECTION
+    # =========================
+    st.header("🚨 Detected Issues")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("🔴 Critical Issues")
+
+        if critical:
+            for b in critical:
+                st.error(f"{b.get('type', 'unknown')} - {b.get('message', '')}")
+        else:
+            st.success("No critical issues found.")
+
+    with col2:
+        st.subheader("🟡 Warnings")
+
+        if warnings:
+            for w in warnings:
+                st.warning(f"{w.get('type', 'unknown')} - {w.get('message', '')}")
+        else:
+            st.success("No warnings found.")
 
     # =========================
     # 🧠 AI REVIEW
@@ -51,32 +105,43 @@ if st.button("Analyze"):
     st.header("🧠 AI Review")
 
     st.markdown("### 📌 Summary")
-    st.write(ai.get("summary", "No summary available"))
+    st.info(summary)
 
-    st.markdown("### 🐞 Bugs Explained")
-    st.write(ai.get("bugs_explained", "No explanation available"))
+    if bugs_explained:
+        st.markdown("### 🐞 Bugs Explained")
+        st.write(bugs_explained)
 
-    st.markdown("### ⚠️ Severity Analysis")
-    st.write(ai.get("severity_analysis", "N/A"))
+    if severity_analysis:
+        st.markdown("### ⚠️ Severity Analysis")
+        st.write(severity_analysis)
 
-    st.markdown("### 📚 Suggestions")
-    suggestions = ai.get("suggestions", "")
-    if isinstance(suggestions, list):
-        st.write("\n".join(str(x) for x in suggestions))
+    # AI findings (safe iteration)
+    st.markdown("### 🔍 AI Findings")
+
+    ai_findings = ai.get("findings") or []
+    if ai_findings:
+        for f in ai_findings:
+            st.write(f"• **{f.get('type', 'unknown')}** → {f.get('message', '')}")
     else:
-        st.write(suggestions)
+        st.write("No AI findings.")
 
-    st.markdown("### 🔧 Fix Explanation")
-    st.write(ai.get("fix_explanation", "N/A"))
+    # suggestions
+    if suggestions:
+        st.markdown("### 📚 Suggestions")
+        for s in suggestions:
+            st.write("✔", s)
+
+    # fix explanation
+    if fix_explanation:
+        st.markdown("### 🔧 Fix Explanation")
+        st.write(fix_explanation)
 
     # =========================
-    # 🔧 FINAL FIXED CODE
+    # 🔧 FIXED CODE
     # =========================
-    st.header("🔧 Final Fixed Code")
+    st.header("🔧 Suggested Fixed Code")
 
-    fixed_code = result.get("final_fixed_code", "")
-
-    if fixed_code:
+    if fixed_code and len(fixed_code) > 3:
         st.code(fixed_code, language=static.get("language", "text"))
     else:
         st.info("No fixed code generated.")

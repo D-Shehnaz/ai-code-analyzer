@@ -1,19 +1,21 @@
-from tree_sitter import Language, Parser
+import ast
 
-# NOTE: For production you would build grammars.
-# For your assignment we use lightweight fallback AST-like parsing.
+def parse_code_basic(code):
 
-def parse_code_basic(code: str):
-    """
-    Lightweight AST-like structure (safe for student projects)
-    """
+    try:
+        tree = ast.parse(code)
 
-    return {
-        "has_function": "def " in code or "function" in code,
-        "has_loop": "for " in code or "while " in code,
-        "has_condition": "if " in code,
-        "language_hints": {
-            "python": "def " in code,
-            "javascript": "console.log" in code or "function" in code
+        return {
+            "has_function": any(isinstance(n, ast.FunctionDef) for n in ast.walk(tree)),
+            "has_loop": any(isinstance(n, (ast.For, ast.While)) for n in ast.walk(tree)),
+            "has_condition": any(isinstance(n, ast.If) for n in ast.walk(tree)),
+            "has_expression": any(isinstance(n, ast.Expr) for n in ast.walk(tree))
         }
-    }
+
+    except:
+        return {
+            "has_function": False,
+            "has_loop": False,
+            "has_condition": False,
+            "has_expression": False
+        }

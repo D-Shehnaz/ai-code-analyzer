@@ -1,35 +1,17 @@
-def analyze_complexity(code: str):
+def analyze_complexity(code):
+
+    score = 1
+
+    score += code.count("for ")
+    score += code.count("while ")
+    score += code.count("if ")
+    score += code.count("elif ")
+    score += code.count("try")
+
     return {
-        "functions": code.count("def ") + code.count("function"),
+        "functions": code.count("def "),
         "loops": code.count("for ") + code.count("while "),
-        "conditions": code.count("if "),
+        "conditions": code.count("if ") + code.count("elif "),
         "try_blocks": code.count("try"),
-        "score": len(code.splitlines())
+        "score": min(score, 10)
     }
-
-
-def detect_bugs(code: str, ast=None):
-    """
-    ONLY REAL, SAFE DETECTION SIGNALS
-    NO fake "deep nesting", no guessing bugs
-    """
-
-    bugs = []
-
-    # REAL unsafe pattern (Python)
-    if "eval(" in code:
-        bugs.append({
-            "bug": "Use of eval() is unsafe",
-            "severity": "Critical",
-            "type": "security"
-        })
-
-    # REAL JS issue pattern
-    if "console.log" in code and "try" in code:
-        bugs.append({
-            "bug": "Logging inside try block may leak errors",
-            "severity": "Low",
-            "type": "design"
-        })
-
-    return bugs
